@@ -44,22 +44,26 @@ async function main() {
   // Setup puppeteer browser
   const browser = await launch({ headless: 'new' });
 
-  // // Create an array of all the page numbers
-  // const countPages = 185
-  // const pages = Array.from(Array(countPages).keys())
-  //   .map(i => `https://www.outland.no/samlekort-og-kortspill/magic-the-gathering/singles?available=1&p=${i + 1}&product_list_limit=100`)
-  //   // .map(i => `https://www.outland.no/samlekort-og-kortspill/magic-the-gathering/singles?available=1&p=${i + 1}&product_list_limit=40`)
-
-  // for await (const data of asyncPool(5, pages, loggingScrapeForProductUrls)) {
-  //   data.forEach(cardUrl => {
-  //     cardScraperWorkerQueue.enqueue(cardUrl)
-  //   });
-  // }
-
-  cardScraperWorkerQueue.enqueue(
-    browser,
-    'https://www.outland.no/p-island-480000002875'
+  // Create an array of all the page numbers
+  const countPages = 185;
+  const pages = Array.from(Array(countPages).keys()).map(
+    (i) =>
+      `https://www.outland.no/samlekort-og-kortspill/magic-the-gathering/singles?available=1&p=${
+        i + 1
+      }&product_list_limit=100`
   );
+  // .map(i => `https://www.outland.no/samlekort-og-kortspill/magic-the-gathering/singles?available=1&p=${i + 1}&product_list_limit=40`)
+
+  for await (const data of asyncPool(5, pages, loggingScrapeForProductUrls)) {
+    data.forEach((cardUrl) => {
+      cardScraperWorkerQueue.enqueue(browser, cardUrl);
+    });
+  }
+
+  // cardScraperWorkerQueue.enqueue(
+  //   browser,
+  //   'https://www.outland.no/p-island-480000002875'
+  // );
 
   await cardScraperWorkerQueue.finished();
 
