@@ -10,11 +10,12 @@ const csvWriter = createObjectCsvWriter({
   path: './out.csv',
   header: [
     { id: 'name', title: 'Name' },
-    { id: 'link', title: 'Link' },
     { id: 'set', title: 'Set' },
-    { id: 'num', title: 'Card Number' },
     { id: 'surface', title: 'Surface' },
     { id: 'price', title: 'Price' },
+    { id: 'stock', title: 'Stock' },
+    { id: 'num', title: 'Card Number' },
+    { id: 'link', title: 'Link' },
     { id: 'image', title: 'Image' },
   ],
 });
@@ -67,11 +68,15 @@ async function main() {
 
   await cardScraperWorkerQueue.finished();
 
-  console.log('Done!');
-  console.log(cardScraperWorkerQueue.results.flat());
-  // await csvWriter.writeRecords(cardScraperWorkerQueue.results)
-
   await browser.close();
+
+  console.log('Finished scraping!');
+  // console.log(cardScraperWorkerQueue.results.flat());
+  console.log(
+    `Writing ${cardScraperWorkerQueue.results.flat().length} cards to file...`
+  );
+  await csvWriter.writeRecords(cardScraperWorkerQueue.results);
+  console.log('Done!');
 }
 
 main().then(() => {}, console.error);
