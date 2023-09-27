@@ -61,7 +61,7 @@ async function main() {
 
   // cardScraperWorkerQueue.enqueue(
   //   browser,
-  //   'https://www.outland.no/p-island-480000002875'
+  //   'https://www.outland.no/p-knight-of-the-ebon-legion-480000199636'
   // );
 
   await cardScraperWorkerQueue.finished();

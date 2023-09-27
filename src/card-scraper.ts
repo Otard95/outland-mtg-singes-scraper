@@ -56,7 +56,12 @@ async function scrapeCardSets(
   const cardBuffer: Card[] = [];
 
   // Wait for the set select to be populated
-  await page.waitForSelector(`${selectors.setSelect} option:not([value=""])`);
+  try {
+    await page.waitForSelector(`${selectors.setSelect} option:not([value=""])`);
+  } catch (error) {
+    console.log(`No sets found for product '${name}'`);
+    return cardBuffer;
+  }
 
   const setSelect = await getSetSelector(page);
 
@@ -228,4 +233,4 @@ async function scrapeProductName(page: Page) {
   return title;
 }
 
-export const cardScraperWorkerQueue = new WorkerQueue(scrapeCard);
+export const cardScraperWorkerQueue = new WorkerQueue(scrapeCard, 15);
