@@ -1,0 +1,21 @@
+{
+  "name": "outland-scraper",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "start": "node src/index.js",
+    "help": "scraperjs --help",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "csv-writer": "^1.6.0",
+    "phantomjs": "^2.1.7",
+    "puppeteer": "^21.3.5",
+    "scraperjs": "^1.2.0",
+    "tiny-async-pool": "^2.1.0"
+  }
+}
