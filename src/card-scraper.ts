@@ -29,10 +29,18 @@ const selectors = {
   surfaceSelect: 'select#attribute473',
 };
 
-async function scrapeCard(browser: Browser, productUrl: string) {
+async function scrapeCard(
+  browser: Browser,
+  productUrl: string,
+  fromPage: string | null
+) {
   const productNameMatch = new URL(productUrl).pathname.match(/p-(.+)-\d+/);
   const product = productNameMatch ? productNameMatch[1] : productUrl;
-  console.log(`Scraping product '${product}'...`);
+  console.log(
+    `Scraping product '${product}${
+      fromPage ? ` from page ${fromPage}` : ''
+    }'...`
+  );
 
   // Open a new page and navigate to the product
   const page = await browser.newPage();
