@@ -4,8 +4,10 @@
   "description": "",
   "main": "index.js",
   "scripts": {
-    "start": "node src/index.js",
-    "help": "scraperjs --help",
+    "build": "rimraf dist; tsc",
+    "start": "node dist/index.js",
+    "dev": "pnpm run build && pnpm run start",
+    "lint": "eslint --ext .ts src",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "keywords": [],
@@ -13,9 +15,26 @@
   "license": "ISC",
   "dependencies": {
     "csv-writer": "^1.6.0",
-    "phantomjs": "^2.1.7",
     "puppeteer": "^21.3.5",
     "scraperjs": "^1.2.0",
     "tiny-async-pool": "^2.1.0"
+  },
+  "devDependencies": {
+    "@rushstack/eslint-patch": "1.5.0",
+    "@types/tiny-async-pool": "2.0.0",
+    "@typescript-eslint/eslint-plugin": "6.7.3",
+    "@typescript-eslint/parser": "6.7.3",
+    "eslint": "8.50.0",
+    "eslint-config-airbnb": "19.0.4",
+    "eslint-config-airbnb-typescript": "17.1.0",
+    "eslint-config-prettier": "9.0.0",
+    "eslint-plugin-import": "2.28.1",
+    "eslint-plugin-jsx-a11y": "6.7.1",
+    "eslint-plugin-prettier": "5.0.0",
+    "eslint-plugin-react": "7.33.2",
+    "eslint-plugin-react-hooks": "4.6.0",
+    "prettier": "3.0.3",
+    "rimraf": "5.0.5",
+    "typescript": "5.2.2"
   }
 }
