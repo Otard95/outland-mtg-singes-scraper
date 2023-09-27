@@ -203,7 +203,8 @@ async function scrapeCardSurfaces(
     const id = await idEl?.evaluate((el) => el.getAttribute('value'));
 
     const stockResponse = await fetch(
-      `https://www.outland.no/rest/V1/clickandcollect/storesInfo?productId=${id}`
+      `https://www.outland.no/rest/V1/clickandcollect/storesInfo?productId=${id}`,
+      { timeout: 10000 }
     );
     const stock = (await stockResponse.json()) as StoreStockResponse;
     const quantity = stock.find((s) => s.name === 'Oslo')?.qty;
