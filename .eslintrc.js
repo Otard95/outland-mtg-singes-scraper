@@ -38,16 +38,10 @@ const COMMON_RULES = {
       tabWidth: 2,
     },
   ],
+  'no-restricted-syntax': 'off',
+  'no-await-in-loop': 'off',
   'no-plusplus': 'off',
   'no-console': 'off', // Why would you want this on? ... proper madness...
-  'react/function-component-definition': 'off', // Why would you want this on? Madness...
-  'react/require-default-props': 'off', // We are using typescript.
-  'react/jsx-pascal-case': 'warn', // This is for our text and heading components. [Discussion needed] Should probably set this as off but we should maybe avoid doing this with future components
-  'react/jsx-props-no-spreading': 'off', // Fuck you in particular.
-  'react/no-array-index-key': 'warn', // Setting this as a warning since we have mutliple cases when we use the index for keys. [Discussion needed] This is will bite us in the ass eventually, need to decide what to do in these cases. Use an UID package?
-  'react/jsx-uses-react': 'off', // Turning off jsx-uses-react rule, as we're mostly on react 17.0 now
-  'react/react-in-jsx-scope': 'off', // :point-up;
-  'react/prop-types': 0,
   'import/prefer-default-export': 'off',
   'import/no-default-export': 'warn',
   'import/no-cycle': 'warn', // Should turn this back on later. [Discussion needed] Majority of the time we have dependecy cycle is just Types being thrown around. Can avoid this by making type declaration files.
