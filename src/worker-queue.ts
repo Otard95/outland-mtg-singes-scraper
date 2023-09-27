@@ -13,6 +13,13 @@ export class WorkerQueue<A extends unknown[], R> {
     this.concurrency = concurrency;
   }
 
+  get Queued() {
+    return this.jobs.length;
+  }
+  get Running() {
+    return this.running.length;
+  }
+
   enqueue(...args: A) {
     this.jobs.push(args);
     this.run();

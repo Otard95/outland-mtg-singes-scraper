@@ -19,6 +19,7 @@ const csvWriter = createObjectCsvWriter({
   ],
 });
 
+type Product = { cardUrl: string; page: string | null };
 function scrapeForProductUrls(url: string) {
   /* eslint-disable */
   return StaticScraper.create(url).scrape(function ($: any) {
@@ -27,10 +28,11 @@ function scrapeForProductUrls(url: string) {
         const pageMatch = url.match(/p=(\d+)/);
         const page = pageMatch ? pageMatch[1] : null;
         // @ts-ignore
-        return [$(this).find('.product-item-name a').attr('href'), page];
+        const cardUrl = $(this).find('.product-item-name a').attr('href');
+        return { cardUrl, page };
       })
       .get();
-  }) as Promise<[productUrl: string, page: string | null][]>;
+  }) as Promise<Product[]>;
   /* eslint-enable */
 }
 
@@ -55,10 +57,16 @@ async function main() {
   );
   // .map(i => `https://www.outland.no/samlekort-og-kortspill/magic-the-gathering/singles?available=1&p=${i + 1}&product_list_limit=40`)
 
+  const interval = setInterval(() => {
+    console.log(`[PROGRESS] ${cardScraperWorkerQueue.Queued} cards queued`);
+  }, 5000);
+
   for await (const data of asyncPool(5, pages, loggingScrapeForProductUrls)) {
-    data.forEach(([cardUrl, page]) => {
+    data.forEach(({ cardUrl, page }) => {
       cardScraperWorkerQueue.enqueue(browser, cardUrl, page);
     });
+    // console.log('queued', cardScraperWorkerQueue.Queued);
+    // console.log('running', cardScraperWorkerQueue.Running);
   }
 
   // cardScraperWorkerQueue.enqueue(
@@ -67,6 +75,8 @@ async function main() {
   // );
 
   await cardScraperWorkerQueue.finished();
+
+  clearInterval(interval);
 
   await browser.close();
 

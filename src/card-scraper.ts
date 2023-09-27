@@ -34,17 +34,17 @@ async function scrapeCard(
   productUrl: string,
   fromPage: string | null
 ) {
-  const productNameMatch = new URL(productUrl).pathname.match(/p-(.+)-\d+/);
+  const productNameMatch = productUrl.match(/p-(.+)-\d+/);
   const product = productNameMatch ? productNameMatch[1] : productUrl;
   console.log(
-    `Scraping product '${product}${
+    `Scraping product '${product}'${
       fromPage ? ` from page ${fromPage}` : ''
-    }'...`
+    }...`
   );
 
   // Open a new page and navigate to the product
   const page = await browser.newPage();
-  await page.goto(productUrl);
+  await page.goto(productUrl, { timeout: 10000 });
 
   const name = await scrapeProductName(page);
 
