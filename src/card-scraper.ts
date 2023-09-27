@@ -216,7 +216,6 @@ async function getSetSelector(page: Page) {
 async function getCardSelector(page: Page) {
   return required(await page.waitForSelector(selectors.cardSelect));
 }
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
 async function getCardSurfaceSelector(page: Page) {
   return required(await page.waitForSelector(selectors.surfaceSelect));
 }

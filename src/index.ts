@@ -1,4 +1,3 @@
-/* eslint-disable @typescript-eslint/no-unused-vars */
 import { createObjectCsvWriter } from 'csv-writer';
 import { launch } from 'puppeteer';
 import { StaticScraper } from 'scraperjs';
@@ -33,7 +32,6 @@ function scrapeForProductUrls(url: string) {
   /* eslint-enable */
 }
 
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
 function loggingScrapeForProductUrls(url: string) {
   const pageMatch = url.match(/p=(\d+)/);
   const page = pageMatch ? pageMatch[1] : url;
