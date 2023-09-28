@@ -1,6 +1,6 @@
+import { load } from 'cheerio';
 import { createObjectCsvWriter } from 'csv-writer';
-import { launch } from 'puppeteer';
-import { StaticScraper } from 'scraperjs';
+import fetch from 'node-fetch';
 import asyncPool from 'tiny-async-pool';
 
 import { cardScraperWorkerQueue } from './card-scraper';
@@ -19,21 +19,20 @@ const csvWriter = createObjectCsvWriter({
   ],
 });
 
-type Product = { cardUrl: string; page: string | null };
-function scrapeForProductUrls(url: string) {
-  /* eslint-disable */
-  return StaticScraper.create(url).scrape(function ($: any) {
-    return $('.product-item-info')
-      .map(function () {
-        const pageMatch = url.match(/p=(\d+)/);
-        const page = pageMatch ? pageMatch[1] : null;
-        // @ts-ignore
-        const cardUrl = $(this).find('.product-item-name a').attr('href');
-        return { cardUrl, page };
-      })
-      .get();
-  }) as Promise<Product[]>;
-  /* eslint-enable */
+type Product = { cardUrl: string | undefined; page: string | null };
+async function scrapeForProductUrls(url: string) {
+  const res = await fetch(url);
+  const html = await res.text();
+  const $ = load(html);
+
+  return $('.product-item-info')
+    .map((_i, el) => {
+      const pageMatch = url.match(/p=(\d+)/);
+      const page = pageMatch ? pageMatch[1] : null;
+      const cardUrl = $(el).find('.product-item-name a').attr('href');
+      return { cardUrl, page };
+    })
+    .get() as Product[];
 }
 
 function loggingScrapeForProductUrls(url: string) {
@@ -44,48 +43,51 @@ function loggingScrapeForProductUrls(url: string) {
 }
 
 async function main() {
-  // Setup puppeteer browser
-  const browser = await launch({ headless: 'new' });
-
   // Create an array of all the page numbers
-  const countPages = 185;
-  const pages = Array.from(Array(countPages).keys()).map(
-    (i) =>
-      `https://www.outland.no/samlekort-og-kortspill/magic-the-gathering/singles?available=1&p=${
-        i + 1
-      }&product_list_limit=100`
-  );
-  // .map(i => `https://www.outland.no/samlekort-og-kortspill/magic-the-gathering/singles?available=1&p=${i + 1}&product_list_limit=40`)
+  const countPages = 1; // 185;
+  const pages = Array.from(Array(countPages).keys())
+    // .map(
+    //   (i) =>
+    //     `https://www.outland.no/samlekort-og-kortspill/magic-the-gathering/singles?available=1&p=${
+    //       i + 1
+    //     }&product_list_limit=100`
+    // );
+    .map(
+      (i) =>
+        `https://www.outland.no/samlekort-og-kortspill/magic-the-gathering/singles?available=1&p=${
+          i + 1
+        }&product_list_limit=40`
+    );
 
+  // Log progress every 5 seconds
   const interval = setInterval(() => {
     console.log(`[PROGRESS] ${cardScraperWorkerQueue.Queued} cards queued`);
   }, 5000);
 
   for await (const data of asyncPool(5, pages, loggingScrapeForProductUrls)) {
     data.forEach(({ cardUrl, page }) => {
-      cardScraperWorkerQueue.enqueue(browser, cardUrl, page);
+      if (!cardUrl) return;
+      cardScraperWorkerQueue.enqueue(cardUrl, page);
     });
-    // console.log('queued', cardScraperWorkerQueue.Queued);
-    // console.log('running', cardScraperWorkerQueue.Running);
   }
 
   // cardScraperWorkerQueue.enqueue(
-  //   browser,
-  //   'https://www.outland.no/p-knight-of-the-ebon-legion-480000199636'
+  //   'https://www.outland.no/p-snow-covered-swamp-480000013642',
+  //   '1'
   // );
 
+  // Wait for all cards to be scraped
   await cardScraperWorkerQueue.finished();
 
+  // Stop logging progress
   clearInterval(interval);
 
-  await browser.close();
-
-  console.log('Finished scraping!');
+  console.log('\nFinished scraping!');
   // console.log(cardScraperWorkerQueue.results.flat());
   console.log(
     `Writing ${cardScraperWorkerQueue.results.flat().length} cards to file...`
   );
-  await csvWriter.writeRecords(cardScraperWorkerQueue.results);
+  await csvWriter.writeRecords(cardScraperWorkerQueue.results.flat());
   console.log('Done!');
 }
 

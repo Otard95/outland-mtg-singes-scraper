@@ -14,10 +14,11 @@
   "author": "",
   "license": "ISC",
   "dependencies": {
+    "@types/cheerio": "^0.22.32",
+    "checkeasy": "^1.1.0",
+    "cheerio": "0.22.0",
     "csv-writer": "^1.6.0",
     "node-fetch": "^2.7.0",
-    "puppeteer": "^21.3.5",
-    "scraperjs": "^1.2.0",
     "tiny-async-pool": "^2.1.0"
   },
   "devDependencies": {

@@ -1,7 +1,10 @@
+import { ValidationError, arrayOf, int, object, string } from 'checkeasy';
+import { load } from 'cheerio';
 import fetch from 'node-fetch';
-import { Browser, Page } from 'puppeteer';
 
-import { required } from './required';
+import { magentoInitJSONSchema, magentoSpConfigSchema } from './magento-schema';
+import { matchesSchema } from './utils/matchesSchema';
+import { ValidatorOf } from './utils/validatorOf';
 import { WorkerQueue } from './worker-queue';
 
 interface Card {
@@ -14,26 +17,24 @@ interface Card {
   image: string;
   stock: string;
 }
-interface StoreStock {
-  name: string;
-  qty: number;
-}
-type StoreStockResponse = StoreStock[];
 
-const selectors = {
-  title: 'h1.page-title span',
-  price: 'span.price',
-  image: 'img.no-sirv-lazy-load',
-  setSelect: 'select#attribute471',
-  cardSelect: 'select#attribute479',
-  surfaceSelect: 'select#attribute473',
-};
+export const cardScraperWorkerQueue = new WorkerQueue(scrapeCard, 15);
 
-async function scrapeCard(
-  browser: Browser,
-  productUrl: string,
-  fromPage: string | null
-) {
+const storeStockResponseSchema = arrayOf(
+  object(
+    {
+      name: string(),
+      qty: int(),
+    },
+    { ignoreUnknown: true }
+  )
+);
+
+const setAttributeId = '471';
+const cardNumberAttributeId = '479';
+const surfaceAttributeId = '473';
+
+async function scrapeCard(productUrl: string, fromPage: string | null) {
   const productNameMatch = productUrl.match(/p-(.+)-\d+/);
   const product = productNameMatch ? productNameMatch[1] : productUrl;
   console.log(
@@ -42,204 +43,183 @@ async function scrapeCard(
     }...`
   );
 
-  // Open a new page and navigate to the product
-  const page = await browser.newPage();
-  await page.goto(productUrl, { timeout: 10000 });
+  // Fetch the product page
+  const res = await fetch(productUrl, { timeout: 10000 });
+  const html = await res.text();
 
-  const name = await scrapeProductName(page);
+  // Load the product page into cheerio
+  const $ = load(html);
 
-  const cards = await scrapeCardSets(name, productUrl, page);
+  // Now find all `<script type="text/x-magento-init">` elements
+  const magentoInitScripts = $('script[type="text/x-magento-init"]');
 
-  await page.close();
+  // Find the script that contains the product data (JSON)
+  const productDataScript = magentoInitScripts
+    .map((_i, el) => tryParseElementContentAsJSON($, el))
+    .get()
+    .find((script): script is ValidatorOf<typeof magentoInitJSONSchema> => {
+      return matchesSchema(script, magentoInitJSONSchema);
+    });
+
+  // If no product data script was found, return an empty array
+  if (!productDataScript) {
+    debugLog(`No product data script found for product '${product}'`);
+    return [];
+  }
+  const { spConfig } =
+    productDataScript['#product_addtocart_form'].configurable;
+
+  // Get the salable product ids
+  const salableProductIds = Object.values(spConfig.salable)
+    .map((obj) => Object.values(obj).flat())
+    .flat()
+    .filter((id, i, arr) => arr.indexOf(id) === i);
+
+  // We get the card name here as its more easily accessible from the root of
+  // the product page
+  const cardName = $('h1.page-title span.base')
+    .text()
+    .replace('(Enkeltkort)', '')
+    .trim();
+
+  // Validate that we have the card name
+  if (!cardName) {
+    debugLog(`No card name found for product '${product}'`);
+    return [];
+  }
+
+  // Convert the salable product ids to cards
+  const cards = await convertProductIdsToCards(
+    cardName,
+    productUrl,
+    spConfig,
+    salableProductIds
+  );
 
   return cards;
 }
 
-async function scrapeCardSets(
-  name: string,
+async function convertProductIdsToCards(
+  cardName: string,
   productUrl: string,
-  page: Page
+  spConfig: ValidatorOf<typeof magentoSpConfigSchema>,
+  salableProductIds: string[]
 ): Promise<Card[]> {
-  // Create a buffer for the cards
-  const cardBuffer: Card[] = [];
-
-  // Wait for the set select to be populated
-  try {
-    await page.waitForSelector(`${selectors.setSelect} option:not([value=""])`);
-  } catch (error) {
-    console.log(`No sets found for product '${name}'`);
-    return cardBuffer;
-  }
-
-  const setSelect = await getSetSelector(page);
-
-  // Get all options with non-empty value and that are not disabled
-  const setOptions = (await page.evaluate((el) => {
-    return Array.from(
-      el.querySelectorAll('option:not([value=""]):not([disabled])')
-    );
-  }, setSelect)) as (Element & { config: { id: string; label: string } })[];
-
-  // Loop through all the set options
-  for (const setOption of setOptions) {
-    const setId = setOption.config.id;
-    /* eslint-disable */
-    const setName = setOption.config.label
-      .replace(/\s+\+kr\s+\d+,\d+/, '')
-      .trim();
-    /* eslint-enable */
-
-    // Unselect the set to clear the card select
-    await setSelect.select('');
-    // Select the set
-    await setSelect.select(setId);
-
-    const cards = await scrapeCardVariants(name, productUrl, setName, page);
-    cardBuffer.push(...cards);
-  }
-
-  cardBuffer.push({
-    name,
-    link: productUrl,
-    set: 'N/A',
-    num: 'N/A',
-    surface: 'N/A',
-    price: 'N/A',
-    image: 'N/A',
-    stock: 'N/A',
-  });
-
-  return cardBuffer;
-}
-
-async function scrapeCardVariants(
-  name: string,
-  productUrl: string,
-  setName: string,
-  page: Page
-): Promise<Card[]> {
-  const cardBuffer: Card[] = [];
-
-  // Wait for the card select to be populated
-  await page.waitForSelector(`${selectors.cardSelect} option:not([value=""])`);
-
-  const cardSelect = await getCardSelector(page);
-
-  // Get all options with non-empty value and that are not disabled
-  const cardOptions = (await page.evaluate((el) => {
-    return Array.from(
-      el.querySelectorAll('option:not([value=""]):not([disabled])')
-    );
-  }, cardSelect)) as (Element & { config: { id: string; label: string } })[];
-
-  // Loop through all the card options
-  for (const cardOption of cardOptions) {
-    const cardId = cardOption.config.id;
-    const cardNumber = cardOption.config.label
-      .replace(/\s+\+kr\s+\d+,\d+/, '')
-      .trim();
-
-    // Unselect the card to clear the surface select
-    await cardSelect.select('');
-    // Select the card
-    await cardSelect.select(cardId);
-
-    const cards = await scrapeCardSurfaces(
-      name,
-      productUrl,
-      setName,
-      cardNumber,
-      page
-    );
-    cardBuffer.push(...cards);
-  }
-
-  return cardBuffer;
-}
-
-async function scrapeCardSurfaces(
-  name: string,
-  productUrl: string,
-  setName: string,
-  cardNumber: string,
-  page: Page
-): Promise<Card[]> {
-  const cardBuffer: Card[] = [];
-
-  // Wait for the surface select to be populated
-  await page.waitForSelector(
-    `${selectors.surfaceSelect} option:not([value=""])`
+  const cards = await Promise.all(
+    salableProductIds.map((id) =>
+      convertProductIdToCard(cardName, productUrl, spConfig, id)
+    )
   );
+  return cards.filter((card): card is Card => card !== null);
+}
 
-  const surfaceSelect = await getCardSurfaceSelector(page);
+async function convertProductIdToCard(
+  cardName: string,
+  productUrl: string,
+  spConfig: ValidatorOf<typeof magentoSpConfigSchema>,
+  salableProductId: string
+): Promise<Card | null> {
+  const { attributes, index, optionPrices, magictoolbox } = spConfig;
 
-  // Get all options with non-empty value and that are not disabled
-  const surfaceOptions = (await page.evaluate((el) => {
-    return Array.from(
-      el.querySelectorAll('option:not([value=""]):not([disabled])')
-    );
-  }, surfaceSelect)) as (Element & { config: { id: string; label: string } })[];
+  // Find the attributes that the product is sorted under
+  const indexEntry = index[salableProductId];
 
-  // Loop through all the surface options
-  for (const surfaceOption of surfaceOptions) {
-    const surfaceId = surfaceOption.config.id;
-    const surfaceName = surfaceOption.config.label
-      .replace(/\s+\+kr\s+\d+,\d+/, '')
-      .trim();
+  // Find the attribute options ids that the product is categorized under
+  const setOptionId = indexEntry[setAttributeId];
+  const cardNumberOptionId = indexEntry[cardNumberAttributeId];
+  const surfaceOptionId = indexEntry[surfaceAttributeId];
 
-    // Select the surface
-    await surfaceSelect.select(surfaceId);
+  // Get the attribute option names from the attribute option ids
+  const setOptionName = attributes[setAttributeId].options.find(
+    (set) => set.id === setOptionId
+  )?.label;
+  const cardNumberOptionName = attributes[cardNumberAttributeId].options.find(
+    (num) => num.id === cardNumberOptionId
+  )?.label;
+  const surfaceOptionName = attributes[surfaceAttributeId].options.find(
+    (surface) => surface.id === surfaceOptionId
+  )?.label;
 
-    const [priceEl, imageEl] = await Promise.all([
-      page.$(selectors.price),
-      page.$(selectors.image),
-    ]);
-    const [price, image] = await Promise.all([
-      priceEl?.evaluate((el) => el.textContent),
-      imageEl?.evaluate((el) => el.getAttribute('src')),
-    ]);
+  // Validate that we have all the required data
+  if (!setOptionName || !cardNumberOptionName || !surfaceOptionName) {
+    debugLog('Missing set, card number or surface for product id', {
+      salableProductId,
+      setOptionId,
+      cardNumberOptionId,
+      surfaceOptionId,
+    });
+    return null;
+  }
 
-    const idEl = await page.$('input[name="selected_configurable_option"]');
-    const id = await idEl?.evaluate((el) => el.getAttribute('value'));
+  // Get the price of the product
+  const price = optionPrices[salableProductId].finalPrice.amount;
 
-    const stockResponse = await fetch(
-      `https://www.outland.no/rest/V1/clickandcollect/storesInfo?productId=${id}`,
+  // Get the image of the product
+  const imageHtml = magictoolbox.galleryData[salableProductId];
+  const $ = load(imageHtml);
+  const image = $('a.mt-thumb-switcher img').attr('src');
+
+  // Validate that we have the image
+  if (!image) {
+    debugLog('Missing image for product id', salableProductId);
+    return null;
+  }
+
+  // Get the stock of the product
+  try {
+    const res = await fetch(
+      `https://www.outland.no/rest/V1/clickandcollect/storesInfo?productId=${salableProductId}`,
       { timeout: 10000 }
     );
-    const stock = (await stockResponse.json()) as StoreStockResponse;
-    const quantity = stock.find((s) => s.name === 'Oslo')?.qty;
+    const storeStockPayload = (await res.json()) as unknown;
+    const storeStock = storeStockResponseSchema(
+      storeStockPayload,
+      'storeStock'
+    );
 
-    cardBuffer.push({
-      name,
+    // Get the stock for 'Oslo'
+    const osloStock = storeStock.find((store) => store.name === 'Oslo');
+
+    // Validate that we have the stock
+    if (!osloStock) {
+      debugLog('Missing stock for product id', salableProductId);
+      return null;
+    }
+
+    return {
+      name: cardName,
       link: productUrl,
-      set: setName,
-      num: cardNumber,
-      surface: surfaceName,
-      price: required(price).replace(/kr\s+/, '').trim(),
-      image: required(image),
-      stock: required(quantity).toString(),
-    });
+      set: setOptionName,
+      num: cardNumberOptionName,
+      surface: surfaceOptionName,
+      price: price.toString(),
+      image,
+      stock: osloStock.qty.toString(),
+    };
+  } catch (error) {
+    if (error instanceof ValidationError) {
+      debugLog(`Stock response was invalid: `, error.message);
+    } else {
+      debugLog(`Failed to fetch stock for product id ${salableProductId}`);
+    }
+    return null;
   }
-
-  return cardBuffer;
 }
 
-async function getSetSelector(page: Page) {
-  return required(await page.waitForSelector(selectors.setSelect));
-}
-async function getCardSelector(page: Page) {
-  return required(await page.waitForSelector(selectors.cardSelect));
-}
-async function getCardSurfaceSelector(page: Page) {
-  return required(await page.waitForSelector(selectors.surfaceSelect));
-}
-
-async function scrapeProductName(page: Page) {
-  const titleEl = required(await page.waitForSelector(selectors.title));
-  const titleText = required(await titleEl.evaluate((el) => el.textContent));
-  const title = titleText.replace('(Enkeltkort)', '').trim();
-  await titleEl.dispose();
-  return title;
+function tryParseElementContentAsJSON(
+  $: cheerio.Root,
+  element: cheerio.Element
+) {
+  const script = $(element).html();
+  if (!script) return null;
+  try {
+    const json = JSON.parse(script) as unknown;
+    return json;
+  } catch (error) {
+    return null;
+  }
 }
 
-export const cardScraperWorkerQueue = new WorkerQueue(scrapeCard, 15);
+function debugLog(...args: unknown[]) {
+  console.log('[CardScraper]', ...args);
+}
