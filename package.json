@@ -5,7 +5,7 @@
   "main": "index.js",
   "scripts": {
     "build": "rimraf dist; tsc",
-    "start": "node dist/index.js",
+    "start": "node --max-old-space-size=8192 dist/index.js",
     "dev": "pnpm run build && pnpm run start",
     "lint": "eslint --ext .ts src",
     "test": "echo \"Error: no test specified\" && exit 1"
