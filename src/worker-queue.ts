@@ -16,6 +16,7 @@ export class WorkerQueue<A extends unknown[], R> {
   get Queued() {
     return this.jobs.length;
   }
+
   get Running() {
     return this.running.length;
   }
@@ -52,4 +53,3 @@ export class WorkerQueue<A extends unknown[], R> {
     });
   }
 }
-

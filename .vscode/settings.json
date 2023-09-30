@@ -1,0 +1,9 @@
+{
+  "files.autoSave": "off",
+  "editor.codeActionsOnSave": {
+    "source.fixAll": true
+  },
+  "eslint.validate": [
+    "javascript"
+  ]
+}
