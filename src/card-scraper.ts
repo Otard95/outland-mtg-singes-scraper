@@ -2,6 +2,7 @@ import { ValidationError, arrayOf, int, object, string } from 'checkeasy';
 import { load } from 'cheerio';
 
 import { magentoInitJSONSchema, magentoSpConfigSchema } from './magento-schema';
+import { createFileLogger } from './utils/fileLogger';
 import { matchesSchema } from './utils/matchesSchema';
 import { createFetch } from './utils/retryFetch';
 import { ValidatorOf } from './utils/validatorOf';
@@ -17,6 +18,13 @@ interface Card {
   image: string;
   stock: string;
 }
+interface Meta {
+  fromPage: string | null;
+  fromPageText: string;
+  product: string;
+}
+
+const logError = createFileLogger('error.log', { linePrefix: '[CardScraper]' });
 const fetch = createFetch();
 
 export const cardScraperWorkerQueue = new WorkerQueue(scrapeCard, 10);
@@ -38,15 +46,20 @@ const surfaceAttributeId = '473';
 async function scrapeCard(productUrl: string, fromPage: string | null) {
   const productNameMatch = productUrl.match(/p-(.+)-\d+/);
   const product = productNameMatch ? productNameMatch[1] : productUrl;
-  console.log(
-    `Scraping product '${product}'${
-      fromPage ? ` from page ${fromPage}` : ''
-    }...`
-  );
+  const fromPageText = fromPage ? ` from page ${fromPage}` : '';
+  console.log(`Scraping product '${product}'${fromPageText}...`);
 
   // Fetch the product page
-  const res = await fetch(productUrl, { timeout: 10000 });
-  const html = await res.text();
+  let html: string;
+  try {
+    const res = await fetch(productUrl, { timeout: 10000 });
+    html = await res.text();
+  } catch (error) {
+    logError(
+      `Failed to fetch product '${product}' (${productUrl})${fromPageText}`
+    );
+    return [];
+  }
 
   // Load the product page into cheerio
   const $ = load(html);
@@ -64,7 +77,9 @@ async function scrapeCard(productUrl: string, fromPage: string | null) {
 
   // If no product data script was found, return an empty array
   if (!productDataScript) {
-    debugLog(`No product data script found for product '${product}'`);
+    logError(
+      `No product data script found for product '${product}' (${productUrl})${fromPageText}`
+    );
     return [];
   }
   const { spConfig } =
@@ -85,7 +100,9 @@ async function scrapeCard(productUrl: string, fromPage: string | null) {
 
   // Validate that we have the card name
   if (!cardName) {
-    debugLog(`No card name found for product '${product}'`);
+    logError(
+      `No card name found for product '${product}' (${productUrl})${fromPageText}`
+    );
     return [];
   }
 
@@ -94,7 +111,8 @@ async function scrapeCard(productUrl: string, fromPage: string | null) {
     cardName,
     productUrl,
     spConfig,
-    salableProductIds
+    salableProductIds,
+    { fromPage, fromPageText, product }
   );
 
   return cards;
@@ -104,21 +122,36 @@ async function convertProductIdsToCards(
   cardName: string,
   productUrl: string,
   spConfig: ValidatorOf<typeof magentoSpConfigSchema>,
-  salableProductIds: string[]
+  salableProductIds: string[],
+  meta: Meta
 ): Promise<Card[]> {
-  const cards = await Promise.all(
-    salableProductIds.map((id) =>
-      convertProductIdToCard(cardName, productUrl, spConfig, id)
+  const convertProductIdToCardWorkerQueue = new WorkerQueue(
+    convertProductIdToCard
+  );
+
+  salableProductIds.forEach((id) =>
+    convertProductIdToCardWorkerQueue.enqueue(
+      cardName,
+      productUrl,
+      spConfig,
+      id,
+      meta
     )
   );
-  return cards.filter((card): card is Card => card !== null);
+
+  await convertProductIdToCardWorkerQueue.finished();
+
+  return convertProductIdToCardWorkerQueue.results.filter(
+    (card): card is Card => card !== null
+  );
 }
 
 async function convertProductIdToCard(
   cardName: string,
   productUrl: string,
   spConfig: ValidatorOf<typeof magentoSpConfigSchema>,
-  salableProductId: string
+  salableProductId: string,
+  { fromPageText, product }: Meta
 ): Promise<Card | null> {
   const { attributes, index, optionPrices, magictoolbox } = spConfig;
 
@@ -143,12 +176,19 @@ async function convertProductIdToCard(
 
   // Validate that we have all the required data
   if (!setOptionName || !cardNumberOptionName || !surfaceOptionName) {
-    debugLog('Missing set, card number or surface for product id', {
-      salableProductId,
-      setOptionId,
-      cardNumberOptionId,
-      surfaceOptionId,
-    });
+    logError(
+      `Missing set, card number or surface for product id '${salableProductId}' for product '${product}' (${productUrl})${fromPageText}`,
+      JSON.stringify(
+        {
+          salableProductId,
+          setOptionId,
+          cardNumberOptionId,
+          surfaceOptionId,
+        },
+        null,
+        2
+      )
+    );
     return null;
   }
 
@@ -158,13 +198,7 @@ async function convertProductIdToCard(
   // Get the image of the product
   const imageHtml = magictoolbox.galleryData[salableProductId];
   const $ = load(imageHtml);
-  const image = $('a.mt-thumb-switcher img').attr('src');
-
-  // Validate that we have the image
-  if (!image) {
-    debugLog('Missing image for product id', salableProductId);
-    return null;
-  }
+  const image = $('a.mt-thumb-switcher img').attr('src') || '';
 
   // Get the stock of the product
   try {
@@ -183,7 +217,19 @@ async function convertProductIdToCard(
 
     // Validate that we have the stock
     if (!osloStock) {
-      debugLog('Missing stock for product id', salableProductId);
+      logError(
+        `Missing stock for product id ${salableProductId} - '${product}' (${productUrl})${fromPageText}`,
+        JSON.stringify(
+          {
+            salableProductId,
+            setOptionId,
+            cardNumberOptionId,
+            surfaceOptionId,
+          },
+          null,
+          2
+        )
+      );
       return null;
     }
 
@@ -199,9 +245,25 @@ async function convertProductIdToCard(
     };
   } catch (error) {
     if (error instanceof ValidationError) {
-      debugLog(`Stock response was invalid: `, error.message);
+      logError(
+        `Stock response was invalid for product id ${salableProductId} - '${product}' (${productUrl})${fromPageText} | error:`,
+        error.message,
+        '  |  ',
+        JSON.stringify(
+          {
+            salableProductId,
+            setOptionId,
+            cardNumberOptionId,
+            surfaceOptionId,
+          },
+          null,
+          2
+        )
+      );
     } else {
-      debugLog(`Failed to fetch stock for product id ${salableProductId}`);
+      logError(
+        `Failed to fetch stock for product id ${salableProductId} - '${product}' (${productUrl})${fromPageText}`
+      );
     }
     return null;
   }
@@ -219,8 +281,4 @@ function tryParseElementContentAsJSON(
   } catch (error) {
     return null;
   }
-}
-
-function debugLog(...args: unknown[]) {
-  console.log('[CardScraper]', ...args);
 }
