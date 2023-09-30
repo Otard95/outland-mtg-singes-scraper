@@ -44,20 +44,19 @@ function loggingScrapeForProductUrls(url: string) {
 
 async function main() {
   // Create an array of all the page numbers
-  const countPages = 1; // 185;
-  const pages = Array.from(Array(countPages).keys())
-    // .map(
-    //   (i) =>
-    //     `https://www.outland.no/samlekort-og-kortspill/magic-the-gathering/singles?available=1&p=${
-    //       i + 1
-    //     }&product_list_limit=100`
-    // );
-    .map(
-      (i) =>
-        `https://www.outland.no/samlekort-og-kortspill/magic-the-gathering/singles?available=1&p=${
-          i + 1
-        }&product_list_limit=40`
-    );
+  const countPages = 185;
+  const pages = Array.from(Array(countPages).keys()).map(
+    (i) =>
+      `https://www.outland.no/samlekort-og-kortspill/magic-the-gathering/singles?available=1&p=${
+        i + 1
+      }&product_list_limit=100`
+  );
+  // .map(
+  //   (i) =>
+  //     `https://www.outland.no/samlekort-og-kortspill/magic-the-gathering/singles?available=1&p=${
+  //       i + 1
+  //     }&product_list_limit=40`
+  // );
 
   // Log progress every 5 seconds
   const interval = setInterval(() => {
@@ -72,8 +71,16 @@ async function main() {
   }
 
   // cardScraperWorkerQueue.enqueue(
-  //   'https://www.outland.no/p-snow-covered-swamp-480000013642',
+  //   'https://www.outland.no/p-riverglide-pathway-480000219631',
   //   '1'
+  // );
+  // cardScraperWorkerQueue.enqueue(
+  //   'https://www.outland.no/p-titanoth-rex-480000209960',
+  //   '2'
+  // );
+  // cardScraperWorkerQueue.enqueue(
+  //   'https://www.outland.no/p-fracturing-gust-480000105712',
+  //   '2'
   // );
 
   // Wait for all cards to be scraped
