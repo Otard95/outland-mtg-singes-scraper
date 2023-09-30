@@ -1,9 +1,9 @@
 import { ValidationError, arrayOf, int, object, string } from 'checkeasy';
 import { load } from 'cheerio';
-import fetch from 'node-fetch';
 
 import { magentoInitJSONSchema, magentoSpConfigSchema } from './magento-schema';
 import { matchesSchema } from './utils/matchesSchema';
+import { createFetch } from './utils/retryFetch';
 import { ValidatorOf } from './utils/validatorOf';
 import { WorkerQueue } from './worker-queue';
 
@@ -17,8 +17,9 @@ interface Card {
   image: string;
   stock: string;
 }
+const fetch = createFetch();
 
-export const cardScraperWorkerQueue = new WorkerQueue(scrapeCard, 15);
+export const cardScraperWorkerQueue = new WorkerQueue(scrapeCard, 10);
 
 const storeStockResponseSchema = arrayOf(
   object(
